@@ -4,24 +4,27 @@ WORKDIR /app
 
 # Dependencies
 FROM base AS deps
-
 COPY package.json yarn.lock ./
-
 RUN yarn install --frozen-lockfile
-
 
 # Build
 FROM base AS builder
+ARG DATABASE_URL
+ARG BETTER_AUTH_URL
+ARG BETTER_AUTH_SECRET
+ARG NEXT_PUBLIC_LOCATIONIQ_API_KEY
+
+ENV DATABASE_URL=$DATABASE_URL
+ENV BETTER_AUTH_URL=$BETTER_AUTH_URL
+ENV BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET
+ENV NEXT_PUBLIC_LOCATIONIQ_API_KEY=$NEXT_PUBLIC_LOCATIONIQ_API_KEY
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
 RUN yarn build
-
 
 # Production
 FROM node:22-alpine AS runner
-
 WORKDIR /app
 
 ENV NODE_ENV=production

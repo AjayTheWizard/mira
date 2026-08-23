@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PlusIcon, Trash2, Loader2 } from "lucide-react";
+import { PlusIcon, Trash2, Loader2, Star } from "lucide-react";
 import {
   getStaff,
   createStaff,
@@ -9,6 +9,7 @@ import {
   deleteStaff,
   toggleStaffActive,
   getBranches,
+  getStaffRatings,
 } from "@/app/actions/manager";
 
 type BranchOption = {
@@ -31,6 +32,12 @@ type StaffRow = {
   updatedAt: Date;
   salonName: string | null;
 };
+type StaffRatingRow = {
+  staffId: string;
+  staffName: string | null;
+  average: number;
+  count: number;
+};
 
 export function StaffView() {
   const [staff, setStaff] = useState<StaffRow[]>([]);
@@ -41,39 +48,59 @@ export function StaffView() {
   const [saving, setSaving] = useState(false);
 
   const [branches, setBranches] = useState<BranchOption[]>([]);
+  const [ratings, setRatings] = useState<StaffRatingRow[]>([]);
 
   async function refresh() {
     setLoading(true);
     setError(null);
+
     try {
-      const [staffRows, branchRows] = await Promise.all([
+      const [staffRows, branchRows, ratingRows] = await Promise.all([
         getStaff(),
         getBranches(),
+        getStaffRatings(),
       ]);
+
       setStaff(staffRows as StaffRow[]);
       setBranches(branchRows as BranchOption[]);
+      setRatings(ratingRows as StaffRatingRow[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load staff");
     } finally {
       setLoading(false);
     }
   }
+
   useEffect(() => {
     refresh();
   }, []);
 
   async function handleAdd(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const data = Object.fromEntries(new FormData(e.currentTarget)) as any;
+
+    const form = e.currentTarget;
+
+    const data = Object.fromEntries(new FormData(form)) as {
+      name: string;
+      role: string;
+      email: string;
+      phone: string;
+      branchId: string;
+    };
+
     setSaving(true);
+    setError(null);
+
     try {
       await createStaff({
         name: data.name,
         role: data.role,
         email: data.email,
         phone: data.phone,
+        branchId: data.branchId,
       });
-      e.currentTarget.reset();
+
+      form.reset();
       setShowForm(false);
       await refresh();
     } catch (err) {
@@ -82,7 +109,7 @@ export function StaffView() {
       setSaving(false);
     }
   }
-
+  
   async function handleEditSave(
     id: string,
     e: React.FormEvent<HTMLFormElement>,
@@ -184,6 +211,7 @@ export function StaffView() {
           <span>Salon</span>
           <span>Specialization</span>
           <span>Contact</span>
+          <span>Rating</span>
           <span>Status</span>
         </div>
 
@@ -203,6 +231,19 @@ export function StaffView() {
                 <span>{member.salonName ?? "—"}</span>
                 <input name="role" defaultValue={member.role ?? ""} />
                 <input name="phone" defaultValue={member.phone ?? ""} />
+                <span>
+                  {(() => {
+                    const r = ratings.find((x) => x.staffId === member.id);
+                    return r ? (
+                      <>
+                        <Star size={12} fill="currentColor" /> {r.average.toFixed(1)}{" "}
+                        <span className="muted">({r.count})</span>
+                      </>
+                    ) : (
+                      <span className="muted">No ratings</span>
+                    );
+                  })()}
+                </span>
 
                 <div className="row-actions">
                   <button className="btn btn-secondary" disabled={saving}>
@@ -233,6 +274,19 @@ export function StaffView() {
                 <span>{member.salonName ?? "—"}</span>
                 <span>{member.role || "Staff"}</span>
                 <span>{member.phone || member.email || "—"}</span>
+                <span>
+                  {(() => {
+                    const r = ratings.find((x) => x.staffId === member.id);
+                    return r ? (
+                      <>
+                        <Star size={12} fill="currentColor" /> {r.average.toFixed(1)}{" "}
+                        <span className="muted">({r.count})</span>
+                      </>
+                    ) : (
+                      <span className="muted">No ratings</span>
+                    );
+                  })()}
+                </span>
 
                 <div className="row-actions">
                   <button

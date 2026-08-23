@@ -4,6 +4,7 @@ import {
   timestamp,
   boolean,
   integer,
+  doublePrecision,
 } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
@@ -71,8 +72,8 @@ export const branch = pgTable("branch", {
   city: text("city"),
   phone: text("phone"),
 
-  latitude: text("latitude"),
-  longitude: text("longitude"),
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
   placeId: text("placeId"),
 
   isActive: boolean("isActive").notNull().default(true),
@@ -85,6 +86,7 @@ export const payment = pgTable("payment", {
   id: text("id").primaryKey(),
   userId: text("userId").notNull(),
   branchId: text("branchId"),
+  appointmentId: text("appointmentId"),
   customerName: text("customerName").notNull(),
   serviceName: text("serviceName").notNull(),
   amount: integer("amount").notNull(),
@@ -99,6 +101,8 @@ export const rating = pgTable("rating", {
   userId: text("userId").notNull(),
   salonId: text("salonId").notNull(),
   branchId: text("branchId"),
+  staffId: text("staffId"),
+  appointmentId: text("appointmentId"),
   customerName: text("customerName").notNull(),
   score: integer("score").notNull(),
   comment: text("comment"),

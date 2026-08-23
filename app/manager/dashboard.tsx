@@ -36,6 +36,7 @@ export function Dashboard({
     todayRevenue: 0,
     pendingPaymentCount: 0,
     pendingPaymentAmount: 0,
+    pendingPaymentPercentage: 0,
     customers: 0,
     staff: 0,
   };
@@ -280,7 +281,9 @@ export function Dashboard({
           </div>
 
           <div className="payment-progress">
-            <span style={{ width: "68%" }} />
+            <span
+              style={{ width: `${dashboardStats.pendingPaymentPercentage}%` }}
+            />
           </div>
 
           <small>Pending payments requiring collection</small>

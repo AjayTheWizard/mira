@@ -1,26 +1,27 @@
 "use client";
-
 import {
-  createBranch,
+  updateAppointmentStatus,
+  updatePaymentMethod,
   updatePaymentStatus,
-  updateSalon,
 } from "@/app/actions/manager";
 import {
   Bell,
   CalendarDays,
+  Clock,
   CreditCard,
   LayoutDashboard,
   LogOut,
   Menu,
+  Scissors,
   Search,
   Settings,
   Store,
   Users,
-  X,
 } from "lucide-react";
-import { SubmitEventHandler, useMemo, useState } from "react";
-
+import { useEffect, useMemo, useState } from "react";
 import { ProfileView } from "@/app/manager/views/profile-view";
+import { ServiceView } from "@/app/manager/views/service-view";
+import { AvailabilityView } from "@/app/manager/views/availability-view";
 import type {
   AppointmentViewModel,
   Branch,
@@ -43,7 +44,6 @@ import { SalonView } from "./views/salon-view";
 import { StaffView } from "./views/staff-view";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
-
 type Props = {
   initialSalon: Salon | null;
   initialBranches: Branch[];
@@ -55,7 +55,6 @@ type Props = {
   monthlyRevenue?: MonthlyRevenue[];
   user?: User;
 };
-
 export default function ManagerWorkspace({
   initialSalon,
   initialBranches,
@@ -69,17 +68,24 @@ export default function ManagerWorkspace({
 }: Props) {
    const router = useRouter();
   const [payments, setPayments] = useState<Payment[]>(initialPayments);
+  const [appointments, setAppointments] =
+    useState<ManagerAppointment[]>(initialAppointments);
   const [mobileNav, setMobileNav] = useState(false);
   const [view, setView] = useState<ManagerView>("Home");
   const [range, setRange] = useState<RevenueRange>("7d");
-
-  const [salonImage, setSalonImage] = useState<string>(
-    initialSalon?.logoUrl ?? "",
-  );
-
   const [search, setSearch] = useState("");
   const [appointmentStatus, setAppointmentStatus] = useState("All");
-  const [showAppointment, setShowAppointment] = useState<any>(null);
+  // Local state only initializes from props once; router.refresh() (used
+  // after creating/updating records) re-fetches server data and passes new
+  // props, so re-sync local state when that happens.
+  useEffect(() => {
+    setAppointments(initialAppointments);
+  }, [initialAppointments]);
+  useEffect(() => {
+    setPayments(initialPayments);
+  }, [initialPayments]);
+  const [showAppointment, setShowAppointment] =
+    useState<AppointmentViewModel | null>(null);
   const managerName = user?.name || "Arjun Kapoor";
   const initials = managerName
     .split(" ")
@@ -87,12 +93,29 @@ export default function ManagerWorkspace({
     .join("")
     .slice(0, 2)
     .toUpperCase();
-
   async function changePayment(id: string, status: string) {
     await updatePaymentStatus(id, status);
     setPayments(payments.map((p) => (p.id === id ? { ...p, status } : p)));
   }
-  const dynamicAppointments: AppointmentViewModel[] = initialAppointments.map(
+  async function changePaymentMethod(id: string, method: string) {
+    await updatePaymentMethod(id, method);
+    setPayments(payments.map((p) => (p.id === id ? { ...p, method } : p)));
+  }
+  async function changeAppointmentStatus(id: string, status: string) {
+    await updateAppointmentStatus(id, status);
+    setAppointments((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, status } : a)),
+    );
+    setShowAppointment((prev: AppointmentViewModel | null) =>
+      prev && prev.id === id
+        ? {
+            ...prev,
+            status: status.replace(/^./, (c) => c.toUpperCase()),
+          }
+        : prev,
+    );
+  }
+  const dynamicAppointments: AppointmentViewModel[] = appointments.map(
     (appointment) => ({
       id: appointment.id,
       customer: appointment.customerName,
@@ -110,7 +133,6 @@ export default function ManagerWorkspace({
       amount: `रू${appointment.amount.toLocaleString("en-IN")}`,
     }),
   );
-
   const filteredAppointments = useMemo(
     () =>
       dynamicAppointments.filter((appointment) =>
@@ -123,16 +145,16 @@ export default function ManagerWorkspace({
   const average = ratings.length
     ? (ratings.reduce((a, r) => a + r.score, 0) / ratings.length).toFixed(1)
     : "0.0";
-
   const navItems = [
     ["Home", LayoutDashboard],
     ["Appointments", CalendarDays],
     ["My Salons", Store],
+    ["My Services", Scissors],
     ["My Staffs", Users],
+    ["Availability", Clock],
     ["Payments", CreditCard],
     ["Profile", Settings],
   ] as const;
-
   async function signOut() {
     await authClient.signOut();
     router.push("/sign-in");
@@ -144,7 +166,7 @@ export default function ManagerWorkspace({
         <div className="brand">
           <div className="brand-mark">m</div>
           <span>
-            mira<span className="brand-dot">.</span>
+            AuraSync<span className="brand-dot">.</span>
           </span>
         </div>
         <p className="nav-label">Manager portal</p>
@@ -230,9 +252,17 @@ export default function ManagerWorkspace({
             />
           )}{" "}
           {view === "My Salons" && <SalonView />}
+          {view === "My Services" && <ServiceView />}
           {view === "My Staffs" && <StaffView />}{" "}
+          {view === "Availability" && <AvailabilityView />}
           {view === "Payments" && (
-            <PaymentView payments={payments} changePayment={changePayment} />
+            <PaymentView
+              payments={payments}
+              changePayment={changePayment}
+              changeMethod={changePaymentMethod}
+              appointments={dynamicAppointments}
+              setShowAppointment={setShowAppointment}
+            />
           )}
           {view === "Profile" && (
             <ProfileView user={user} average={average} />
@@ -242,6 +272,7 @@ export default function ManagerWorkspace({
           <AppointmentDrawer
             appointment={showAppointment}
             onClose={() => setShowAppointment(null)}
+            onStatusChange={changeAppointmentStatus}
           />
         )}{" "}
       </main>

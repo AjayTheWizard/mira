@@ -2,6 +2,25 @@
 
 import { authClient } from "@/lib/auth-client";
 import {
+  cancelAppointment,
+  getExploreSalons,
+  markAllNotificationsRead,
+  submitRating,
+  toggleFavorite,
+  updatePreferences,
+} from "@/app/actions/customer";
+import { BookingModal } from "@/components/booking-modal";
+import {
+  CustomerLocationSearch,
+  type CustomerLocation,
+} from "@/components/customer-location-search";
+import type {
+  ExploreSalon,
+  MyAppointment,
+  CustomerPreferences,
+} from "@/lib/db/customer-types";
+import { formatDistance } from "@/lib/geo";
+import {
   Bell,
   CalendarDays,
   ChevronRight,
@@ -17,64 +36,15 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Role = "customer" | "manager";
 type User = { name: string; email: string; role: Role };
 
-type Salon = {
-  name: string;
-  area: string;
-  rating: number;
-  reviews: number;
-  price: string;
-  distance: string;
-  open: boolean;
-  next: string;
-  image: string;
-  services: string[];
-};
-const salons: Salon[] = [
-  {
-    name: "The Hair & Beauty Studio",
-    area: "Thamel, Kathmandu",
-    rating: 4.8,
-    reviews: 184,
-    price: "रू 899",
-    distance: "1.2 km",
-    open: true,
-    next: "Today, 4:30 PM",
-    image:
-      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=900&q=80",
-    services: ["Haircut", "Hair color", "Facial"],
-  },
-  {
-    name: "Blush & Bloom Salon",
-    area: "Jhamsikhel, Lalitpur",
-    rating: 4.6,
-    reviews: 96,
-    price: "रू 699",
-    distance: "2.8 km",
-    open: true,
-    next: "Tomorrow, 10:00 AM",
-    image:
-      "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=900&q=80",
-    services: ["Hair styling", "Manicure", "Spa"],
-  },
-  {
-    name: "Ojas Wellness Lounge",
-    area: "Lakeside, Pokhara",
-    rating: 4.9,
-    reviews: 241,
-    price: "रू 1,299",
-    distance: "4.1 km",
-    open: false,
-    next: "Sat, 11:30 AM",
-    image:
-      "https://images.unsplash.com/photo-1600948836101-f9ffda59d250?auto=format&fit=crop&w=900&q=80",
-    services: ["Massage", "Facial", "Pedicure"],
-  },
-];
+// Statuses that mean the visit hasn't happened yet (or is in progress) —
+// used to decide what counts as an "upcoming" appointment on the portal.
+const ACTIVE_APPOINTMENT_STATUSES = new Set(["upcoming", "confirmed", "arrived"]);
+
 const categories = [
   "Haircut",
   "Hair Styling",
@@ -86,13 +56,36 @@ const categories = [
   "Spa",
 ];
 
-export default function HomeClient({ user }: { user: User }) {
+type HomeClientProps = {
+  user: User;
+  initialSalons: ExploreSalon[];
+  initialFavoriteIds: string[];
+  initialAppointments: MyAppointment[];
+  initialPreferences: CustomerPreferences;
+  initialUnreadCount: number;
+};
+
+export default function HomeClient({
+  user,
+  initialSalons,
+  initialFavoriteIds,
+  initialAppointments,
+  initialPreferences,
+  initialUnreadCount,
+}: HomeClientProps) {
   const router = useRouter();
   const [tab, setTab] = useState("Home");
   const [query, setQuery] = useState("");
   const [menu, setMenu] = useState(false);
-  const [saved, setSaved] = useState<string[]>([salons[0].name]);
   const [notice, setNotice] = useState("");
+
+  const [salons, setSalons] = useState<ExploreSalon[]>(initialSalons);
+  const [loadingSalons, setLoadingSalons] = useState(false);
+  const [location, setLocation] = useState<CustomerLocation | null>(null);
+  const [favoriteIds, setFavoriteIds] = useState<string[]>(initialFavoriteIds);
+  const [bookingBranchId, setBookingBranchId] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
+
   const matches = useMemo(
     () =>
       salons.filter((salon) =>
@@ -100,26 +93,55 @@ export default function HomeClient({ user }: { user: User }) {
           .toLowerCase()
           .includes(query.toLowerCase()),
       ),
-    [query],
+    [query, salons],
   );
+
+  // Re-fetch, sorted by distance, whenever the location changes.
+  useEffect(() => {
+    setLoadingSalons(true);
+    getExploreSalons(location ? { lat: location.lat, lng: location.lng } : undefined)
+      .then(setSalons)
+      .finally(() => setLoadingSalons(false));
+  }, [location]);
+
   async function signOut() {
     await authClient.signOut();
     router.push("/sign-in");
     router.refresh();
   }
+
+  async function handleToggleFavorite(salonId: string) {
+    setFavoriteIds((ids) =>
+      ids.includes(salonId) ? ids.filter((id) => id !== salonId) : [...ids, salonId],
+    );
+    await toggleFavorite(salonId);
+  }
+
+  async function handleBellClick() {
+    if (unreadCount > 0) {
+      await markAllNotificationsRead();
+      setUnreadCount(0);
+      setNotice(`You had ${unreadCount} notification${unreadCount === 1 ? "" : "s"}`);
+    } else {
+      setNotice("You are all caught up");
+    }
+  }
+
   if (user.role === "manager")
     return <ManagerHome user={user} signOut={signOut} />;
+
   function nav(next: string) {
     setTab(next);
     setMenu(false);
   }
+
   return (
     <div className="portal-shell">
       <aside className={`portal-sidebar ${menu ? "mobile-open" : ""}`}>
         <div className="brand">
           <div className="brand-mark">m</div>
           <span>
-            mira<span className="brand-dot">.</span>
+            AuraSync<span className="brand-dot">.</span>
           </span>
         </div>
         <p className="nav-label">Customer portal</p>
@@ -156,18 +178,23 @@ export default function HomeClient({ user }: { user: User }) {
           >
             <Menu size={20} />
           </button>
-          <div className="location-chip">
-            <MapPin size={15} />
-            <span>Thamel, Kathmandu</span>
-            <ChevronRight size={14} />
-          </div>
+          <CustomerLocationSearch value={location} onChange={setLocation} />
           <div className="top-actions">
             <button
               className="icon-button"
               aria-label="Notifications"
-              onClick={() => setNotice("You are all caught up")}
+              onClick={handleBellClick}
+              style={{ position: "relative" }}
             >
               <Bell size={18} />
+              {unreadCount > 0 && (
+                <span
+                  style={{
+                    position: "absolute", top: -2, right: -2, width: 8, height: 8,
+                    borderRadius: "50%", background: "#e0435c",
+                  }}
+                />
+              )}
             </button>
             <button className="user-mini" onClick={() => nav("Settings")}>
               <div className="avatar">
@@ -195,9 +222,11 @@ export default function HomeClient({ user }: { user: User }) {
               query={query}
               setQuery={setQuery}
               matches={matches}
-              saved={saved}
-              setSaved={setSaved}
+              favoriteIds={favoriteIds}
+              toggleFavorite={handleToggleFavorite}
               setTab={setTab}
+              onBook={setBookingBranchId}
+              nextAppointment={initialAppointments.find((a) => ACTIVE_APPOINTMENT_STATUSES.has(a.status))}
             />
           )}
           {tab === "Explore" && (
@@ -205,14 +234,32 @@ export default function HomeClient({ user }: { user: User }) {
               query={query}
               setQuery={setQuery}
               matches={matches}
-              saved={saved}
-              setSaved={setSaved}
+              favoriteIds={favoriteIds}
+              toggleFavorite={handleToggleFavorite}
+              loading={loadingSalons}
+              onBook={setBookingBranchId}
             />
           )}
-          {tab === "My Appointments" && <Appointments />}
-          {tab === "Settings" && <CustomerSettings user={user} />}
+          {tab === "My Appointments" && (
+            <Appointments initialAppointments={initialAppointments} />
+          )}
+          {tab === "Settings" && (
+            <CustomerSettings
+              user={user}
+              initialPreferences={initialPreferences}
+              location={location}
+              setLocation={setLocation}
+            />
+          )}
         </div>
       </main>
+
+      {bookingBranchId && (
+        <BookingModal
+          branchId={bookingBranchId}
+          onClose={() => setBookingBranchId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -222,9 +269,11 @@ function CustomerHome({
   query,
   setQuery,
   matches,
-  saved,
-  setSaved,
+  favoriteIds,
+  toggleFavorite,
   setTab,
+  onBook,
+  nextAppointment,
 }: any) {
   return (
     <>
@@ -274,34 +323,54 @@ function CustomerHome({
           </button>
         </div>
         <div className="salon-grid">
-          {matches.map((salon: Salon) => (
+          {matches.slice(0, 6).map((salon: ExploreSalon) => (
             <SalonCard
-              key={salon.name}
+              key={salon.branchId}
               salon={salon}
-              saved={saved.includes(salon.name)}
-              toggle={() =>
-                setSaved((items: string[]) =>
-                  items.includes(salon.name)
-                    ? items.filter((item) => item !== salon.name)
-                    : [...items, salon.name],
-                )
-              }
+              saved={favoriteIds.includes(salon.salonId)}
+              toggle={() => toggleFavorite(salon.salonId)}
+              onBook={() => onBook(salon.branchId)}
             />
           ))}
+          {matches.length === 0 && (
+            <p className="muted">No salons found yet — check back soon.</p>
+          )}
         </div>
       </section>
       <div className="customer-lower">
         <section className="appointment-card">
           <div>
             <p className="eyebrow">UPCOMING APPOINTMENT</p>
-            <h2>Saturday, 18 May</h2>
-            <p className="muted">
-              The Hair & Beauty Studio · Haircut with Ananya
-            </p>
+            {nextAppointment ? (
+              <>
+                <h2>
+                  {nextAppointment.appointmentDate.toLocaleDateString("en-IN", {
+                    weekday: "long",
+                    day: "numeric",
+                    month: "long",
+                  })}
+                </h2>
+                <p className="muted">
+                  {nextAppointment.salonName} · {nextAppointment.serviceName}
+                  {nextAppointment.staffName ? ` with ${nextAppointment.staffName}` : ""}
+                </p>
+              </>
+            ) : (
+              <>
+                <h2>Nothing booked yet</h2>
+                <p className="muted">Explore salons and book your next visit.</p>
+              </>
+            )}
           </div>
-          <div className="appointment-time">
-            10:30 AM<span>Confirmed</span>
-          </div>
+          {nextAppointment && (
+            <div className="appointment-time">
+              {nextAppointment.appointmentDate.toLocaleTimeString("en-IN", {
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+              <span>Confirmed</span>
+            </div>
+          )}
         </section>
         <section className="tip-card">
           <p className="eyebrow">YOUR NEXT VISIT</p>
@@ -316,20 +385,25 @@ function CustomerHome({
   );
 }
 
-function Explore({ query, setQuery, matches, saved, setSaved }: any) {
+function Explore({
+  query,
+  setQuery,
+  matches,
+  favoriteIds,
+  toggleFavorite,
+  loading,
+  onBook,
+}: any) {
   return (
     <>
       <div className="portal-heading">
         <div>
           <p className="eyebrow">EXPLORE</p>
-          <h1>Salons around Kathmandu</h1>
+          <h1>Salons around you</h1>
           <p className="muted">
             Compare ratings, services, price and availability.
           </p>
         </div>
-        <button className="btn btn-secondary">
-          <MapPin size={15} /> Use my location
-        </button>
       </div>
       <div className="customer-search">
         <Search size={18} />
@@ -339,55 +413,57 @@ function Explore({ query, setQuery, matches, saved, setSaved }: any) {
           placeholder="Search salons, services or location..."
         />
       </div>
-      <div className="filter-row">
-        <button className="filter-pill active">Recommended</button>
-        <button className="filter-pill">Open now</button>
-        <button className="filter-pill">Highest rated</button>
-        <button className="filter-pill">Under रू1,000</button>
-        <button className="filter-pill">Available today</button>
-      </div>
       <div className="explore-layout">
         <div className="salon-list">
-          {matches.map((salon: Salon) => (
-            <SalonCard
-              key={salon.name}
-              salon={salon}
-              saved={saved.includes(salon.name)}
-              toggle={() =>
-                setSaved((items: string[]) =>
-                  items.includes(salon.name)
-                    ? items.filter((item: string) => item !== salon.name)
-                    : [...items, salon.name],
-                )
-              }
-              wide
-            />
-          ))}
+          {loading && <p className="muted">Loading salons...</p>}
+          {!loading &&
+            matches.map((salon: ExploreSalon) => (
+              <SalonCard
+                key={salon.branchId}
+                salon={salon}
+                saved={favoriteIds.includes(salon.salonId)}
+                toggle={() => toggleFavorite(salon.salonId)}
+                onBook={() => onBook(salon.branchId)}
+                wide
+              />
+            ))}
+          {!loading && matches.length === 0 && (
+            <p className="muted">No salons match that search.</p>
+          )}
         </div>
         <div className="map-placeholder">
           <MapPin size={27} />
           <strong>Explore by location</strong>
-          <span>Map view coming next</span>
+          <span>Set your location above to sort by distance</span>
         </div>
       </div>
     </>
   );
 }
+
 function SalonCard({
   salon,
   saved,
   toggle,
+  onBook,
   wide,
 }: {
-  salon: Salon;
+  salon: ExploreSalon;
   saved: boolean;
   toggle: () => void;
+  onBook: () => void;
   wide?: boolean;
 }) {
   return (
     <article className={`salon-card ${wide ? "wide" : ""}`}>
       <div className="salon-image">
-        <img src={salon.image} alt={salon.name} />
+        <img
+          src={
+            salon.logoUrl ||
+            "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=900&q=80"
+          }
+          alt={salon.name}
+        />
         <button
           className={`heart-button ${saved ? "saved" : ""}`}
           onClick={toggle}
@@ -395,8 +471,8 @@ function SalonCard({
         >
           <Heart size={17} fill={saved ? "currentColor" : "none"} />
         </button>
-        <span className={`open-badge ${salon.open ? "" : "closed"}`}>
-          {salon.open ? "Open now" : "Closed"}
+        <span className={`open-badge ${salon.isActive ? "" : "closed"}`}>
+          {salon.isActive ? "Open" : "Temporarily unavailable"}
         </span>
       </div>
       <div className="salon-card-body">
@@ -406,28 +482,82 @@ function SalonCard({
             <p>{salon.area}</p>
           </div>
           <span className="rating">
-            <Star size={13} fill="currentColor" /> {salon.rating}
+            <Star size={13} fill="currentColor" />{" "}
+            {salon.rating > 0 ? salon.rating : "New"}
           </span>
         </div>
         <div className="salon-meta">
-          <span>{salon.distance}</span>
-          <span>From {salon.price}</span>
-          <span>{salon.reviews} reviews</span>
+          <span>
+            {salon.distanceKm != null ? formatDistance(salon.distanceKm) : salon.area}
+          </span>
+          <span>{salon.fromPrice != null ? `From रू${salon.fromPrice}` : "Prices vary"}</span>
+          <span>{salon.reviewCount} reviews</span>
         </div>
         <div className="tag-row">
-          {salon.services.map((service) => (
+          {salon.services.slice(0, 3).map((service) => (
             <span key={service}>{service}</span>
           ))}
         </div>
         <div className="salon-card-footer">
-          <span>Next: {salon.next}</span>
-          <button className="btn btn-primary btn-small">Book now</button>
+          <span>{salon.services.length} service{salon.services.length === 1 ? "" : "s"}</span>
+          <button
+            className="btn btn-primary btn-small"
+            disabled={!salon.isActive}
+            onClick={onBook}
+          >
+            Book now
+          </button>
         </div>
       </div>
     </article>
   );
 }
-function Appointments() {
+
+function Appointments({ initialAppointments }: { initialAppointments: MyAppointment[] }) {
+  const [appointments, setAppointments] = useState(initialAppointments);
+  const [filter, setFilter] = useState<"Upcoming" | "Past" | "Cancelled">("Upcoming");
+  const [ratingFor, setRatingFor] = useState<string | null>(null);
+  const [ratingScore, setRatingScore] = useState(5);
+  const [ratingComment, setRatingComment] = useState("");
+  const [ratingSaving, setRatingSaving] = useState(false);
+  const [ratingError, setRatingError] = useState<string | null>(null);
+
+  async function handleCancel(id: string) {
+    setAppointments((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, status: "cancelled" } : a)),
+    );
+    await cancelAppointment(id);
+  }
+
+  function openRating(id: string) {
+    setRatingFor(id);
+    setRatingScore(5);
+    setRatingComment("");
+    setRatingError(null);
+  }
+
+  async function handleSubmitRating(id: string) {
+    setRatingSaving(true);
+    setRatingError(null);
+    try {
+      await submitRating({ appointmentId: id, score: ratingScore, comment: ratingComment });
+      setAppointments((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, rated: true } : a)),
+      );
+      setRatingFor(null);
+    } catch (err) {
+      setRatingError(err instanceof Error ? err.message : "Failed to submit rating");
+    } finally {
+      setRatingSaving(false);
+    }
+  }
+
+  const filtered = appointments.filter((a) => {
+    if (filter === "Upcoming") return ACTIVE_APPOINTMENT_STATUSES.has(a.status);
+    if (filter === "Cancelled") return a.status === "cancelled";
+    return a.status === "completed";
+  });
+
   return (
     <>
       <div className="portal-heading">
@@ -436,37 +566,129 @@ function Appointments() {
           <h1>Your self-care calendar</h1>
           <p className="muted">Keep track of upcoming and past salon visits.</p>
         </div>
-        <button className="btn btn-primary">Book a salon</button>
       </div>
       <div className="tabs">
-        <button className="active">Upcoming</button>
-        <button>Past</button>
-        <button>Cancelled</button>
+        {(["Upcoming", "Past", "Cancelled"] as const).map((f) => (
+          <button key={f} className={filter === f ? "active" : ""} onClick={() => setFilter(f)}>
+            {f}
+          </button>
+        ))}
       </div>
       <section className="appointment-list">
-        <div className="appointment-list-row">
-          <div className="appointment-date">
-            <strong>18</strong>
-            <span>May</span>
-          </div>
-          <div className="appointment-list-copy">
-            <h3>The Hair & Beauty Studio</h3>
-            <p>Haircut · Ananya Sharma · 10:30 AM · 45 min</p>
-            <div className="tag-row">
-              <span>Confirmed</span>
-              <span>Payment: Pay at salon</span>
+        {filtered.length === 0 && <p className="muted">Nothing here yet.</p>}
+        {filtered.map((appt) => (
+          <div className="appointment-list-row" key={appt.id}>
+            <div className="appointment-date">
+              <strong>{appt.appointmentDate.getDate()}</strong>
+              <span>{appt.appointmentDate.toLocaleDateString("en-IN", { month: "short" })}</span>
             </div>
+            <div className="appointment-list-copy">
+              <h3>{appt.salonName}</h3>
+              <p>
+                {appt.serviceName}
+                {appt.staffName ? ` · ${appt.staffName}` : ""} ·{" "}
+                {appt.appointmentDate.toLocaleTimeString("en-IN", {
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}{" "}
+                · {appt.durationMinutes} min
+              </p>
+              <div className="tag-row">
+                <span>{appt.status.replace(/^./, (c) => c.toUpperCase())}</span>
+                <span>रू{appt.amount.toLocaleString("en-IN")}</span>
+              </div>
+              {appt.status === "arrived" && (
+                <p className="success-note">
+                  You're checked in — your stylist will be with you shortly.
+                </p>
+              )}
+            </div>
+            {appt.status === "upcoming" && (
+              <button className="text-button" onClick={() => handleCancel(appt.id)}>
+                Cancel
+              </button>
+            )}
+            {appt.status === "completed" && !appt.rated && ratingFor !== appt.id && (
+              <button className="text-button" onClick={() => openRating(appt.id)}>
+                Rate this visit
+              </button>
+            )}
+            {appt.status === "completed" && appt.rated && (
+              <span className="muted">Rated</span>
+            )}
+            {ratingFor === appt.id && (
+              <div className="rating-form">
+                <div className="star-picker">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      className="icon-button"
+                      aria-label={`${n} star${n === 1 ? "" : "s"}`}
+                      onClick={() => setRatingScore(n)}
+                    >
+                      <Star size={16} fill={n <= ratingScore ? "currentColor" : "none"} />
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  placeholder="Add a comment (optional)"
+                  value={ratingComment}
+                  onChange={(e) => setRatingComment(e.target.value)}
+                />
+                {ratingError && <p className="error-banner">{ratingError}</p>}
+                <div className="row-actions">
+                  <button
+                    className="btn btn-primary"
+                    disabled={ratingSaving}
+                    onClick={() => handleSubmitRating(appt.id)}
+                  >
+                    Submit rating
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => setRatingFor(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-          <button className="text-button">
-            View details <ChevronRight size={14} />
-          </button>
-        </div>
+        ))}
       </section>
     </>
   );
 }
-function CustomerSettings({ user }: { user: User }) {
+
+function CustomerSettings({
+  user,
+  initialPreferences,
+  location,
+  setLocation,
+}: {
+  user: User;
+  initialPreferences: CustomerPreferences;
+  location: CustomerLocation | null;
+  setLocation: (l: CustomerLocation | null) => void;
+}) {
   const [saved, setSaved] = useState(false);
+  const [notifications, setNotifications] = useState(initialPreferences.notificationsEnabled);
+  const [paymentUpdates, setPaymentUpdates] = useState(initialPreferences.paymentRemindersEnabled);
+
+  async function saveProfile(e: React.FormEvent) {
+    e.preventDefault();
+    setSaved(true);
+  }
+
+  async function saveTogglePrefs(next: { notificationsEnabled?: boolean; paymentRemindersEnabled?: boolean }) {
+    await updatePreferences({
+      location: location?.label ?? initialPreferences.location,
+      ...next,
+    });
+  }
+
   return (
     <>
       <div className="portal-heading">
@@ -489,21 +711,23 @@ function CustomerSettings({ user }: { user: User }) {
               <p className="muted">{user.email}</p>
             </div>
           </div>
-          <label>
-            Full name
-            <input defaultValue={user.name} />
-          </label>
-          <label>
-            Email
-            <input defaultValue={user.email} />
-          </label>
-          <label>
-            Phone number
-            <input placeholder="Add your phone number" />
-          </label>
-          <button className="btn btn-primary" onClick={() => setSaved(true)}>
-            Save changes
-          </button>
+          <form onSubmit={saveProfile}>
+            <label>
+              Full name
+              <input defaultValue={user.name} />
+            </label>
+            <label>
+              Email
+              <input defaultValue={user.email} />
+            </label>
+            <label>
+              Phone number
+              <input placeholder="Add your phone number" />
+            </label>
+            <button className="btn btn-primary" type="submit">
+              Save changes
+            </button>
+          </form>
           {saved && (
             <div className="success-note">Profile updated successfully.</div>
           )}
@@ -514,18 +738,38 @@ function CustomerSettings({ user }: { user: User }) {
           <div className="location-setting">
             <MapPin size={18} />
             <div>
-              <strong>Thamel, Kathmandu</strong>
+              <strong>{location?.label ?? initialPreferences.location ?? "Not set"}</strong>
               <p className="muted">Used for nearby salon recommendations</p>
             </div>
           </div>
-          <button className="btn btn-secondary">Use my current location</button>
+          <CustomerLocationSearch
+            value={location}
+            onChange={(l) => {
+              setLocation(l);
+              updatePreferences({ location: l?.label ?? null });
+            }}
+          />
           <div className="settings-toggle">
             <span>Appointment reminders</span>
-            <input type="checkbox" defaultChecked />
+            <input
+              type="checkbox"
+              checked={notifications}
+              onChange={(e) => {
+                setNotifications(e.target.checked);
+                saveTogglePrefs({ notificationsEnabled: e.target.checked });
+              }}
+            />
           </div>
           <div className="settings-toggle">
             <span>Payment updates</span>
-            <input type="checkbox" defaultChecked />
+            <input
+              type="checkbox"
+              checked={paymentUpdates}
+              onChange={(e) => {
+                setPaymentUpdates(e.target.checked);
+                saveTogglePrefs({ paymentRemindersEnabled: e.target.checked });
+              }}
+            />
           </div>
         </section>
       </div>
@@ -542,7 +786,7 @@ function ManagerHome({ user, signOut }: { user: User; signOut: () => void }) {
           <div className="brand">
             <div className="brand-mark">m</div>
             <span>
-              mira<span className="brand-dot">.</span>
+              AuraSync<span className="brand-dot">.</span>
             </span>
           </div>
           <div className="manager-user">
@@ -579,7 +823,7 @@ function ManagerHome({ user, signOut }: { user: User; signOut: () => void }) {
               className="btn btn-primary"
               onClick={() => router.push("/manager")}
             >
-              Open manager portal <ArrowRightIcon />
+              Open manager portal <ChevronRight size={16} />
             </button>
           </div>
         </div>
@@ -600,74 +844,7 @@ function ManagerHome({ user, signOut }: { user: User; signOut: () => void }) {
             </button>
           </div>
         </section>
-        <div className="manager-stats">
-          <div>
-            <span>Today's appointments</span>
-            <strong>18</strong>
-            <small>+12% this week</small>
-          </div>
-          <div>
-            <span>Today's revenue</span>
-            <strong>रू32,480</strong>
-            <small>On track</small>
-          </div>
-          <div>
-            <span>Average rating</span>
-            <strong>
-              4.8 <small>★</small>
-            </strong>
-            <small>342 reviews</small>
-          </div>
-          <div>
-            <span>Pending payments</span>
-            <strong>6</strong>
-            <small>Needs attention</small>
-          </div>
-        </div>
-        <div className="manager-home-grid">
-          <section className="profile-panel">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">TODAY'S APPOINTMENTS</p>
-                <h2>Keep the day moving</h2>
-              </div>
-              <button
-                className="text-button"
-                onClick={() => router.push("/manager")}
-              >
-                View all <ChevronRight size={14} />
-              </button>
-            </div>
-            {[
-              "Riya Kapoor · Hair color · 10:30 AM",
-              "Arjun Mehta · Haircut · 11:15 AM",
-              "Meera Nair · Facial · 12:00 PM",
-            ].map((item) => (
-              <div className="schedule-row" key={item}>
-                <span className="schedule-dot" />
-                <span>{item}</span>
-                <strong>Confirmed</strong>
-              </div>
-            ))}
-          </section>
-          <section className="profile-panel">
-            <p className="eyebrow">PENDING PAYMENTS</p>
-            <h2>रू18,650 to collect</h2>
-            <p className="muted">
-              6 appointments have unpaid or partial balances.
-            </p>
-            <button
-              className="btn btn-primary"
-              onClick={() => router.push("/manager")}
-            >
-              Update payments <ArrowRightIcon />
-            </button>
-          </section>
-        </div>
       </div>
     </main>
   );
-}
-function ArrowRightIcon() {
-  return <ChevronRight size={16} />;
 }

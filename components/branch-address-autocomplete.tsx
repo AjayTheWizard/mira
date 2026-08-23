@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { loadGoogleMaps } from "@/lib/google-maps-loader";
+import { useEffect, useRef, useState } from "react";
 
 export type PlaceResult = {
   address: string;
@@ -9,6 +8,27 @@ export type PlaceResult = {
   latitude: string;
   longitude: string;
   placeId: string;
+};
+
+type LocationIQResult = {
+  place_id: string;
+  lat: string;
+  lon: string;
+  display_name: string;
+
+  address?: {
+    road?: string;
+    house_number?: string;
+    neighbourhood?: string;
+    suburb?: string;
+    city?: string;
+    town?: string;
+    village?: string;
+    county?: string;
+    state?: string;
+    postcode?: string;
+    country?: string;
+  };
 };
 
 type Props = {
@@ -22,64 +42,192 @@ export function BranchAddressAutocomplete({
   onChange,
   onSelect,
 }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const onSelectRef = useRef(onSelect);
-  onSelectRef.current = onSelect;
+  const [suggestions, setSuggestions] = useState<LocationIQResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
 
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  /*
+   * Fetch autocomplete suggestions
+   */
   useEffect(() => {
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (!apiKey || !inputRef.current) return;
+    const query = value.trim();
 
-    let listener: google.maps.MapsEventListener | null = null;
+    if (query.length < 3) {
+      setSuggestions([]);
+      setOpen(false);
+      setLoading(false);
 
-    loadGoogleMaps(apiKey).then(() => {
-      if (!inputRef.current) return;
+      return;
+    }
 
-      const autocomplete = new google.maps.places.Autocomplete(
-        inputRef.current,
-        {
-          fields: [
-            "formatted_address",
-            "address_components",
-            "geometry",
-            "place_id",
-          ],
-          types: ["address"],
-        },
-      );
+    const controller = new AbortController();
 
-      listener = autocomplete.addListener("place_changed", () => {
-        const place = autocomplete.getPlace();
-        if (!place.geometry?.location) return;
+    const timeout = setTimeout(async () => {
+      try {
+        setLoading(true);
 
-        const city =
-          place.address_components?.find((c) => c.types.includes("locality"))
-            ?.long_name ??
-          place.address_components?.find((c) =>
-            c.types.includes("administrative_area_level_2"),
-          )?.long_name ??
-          "";
+        const apiKey = process.env.NEXT_PUBLIC_LOCATIONIQ_API_KEY;
 
-        onSelectRef.current({
-          address: place.formatted_address ?? inputRef.current!.value,
-          city,
-          latitude: String(place.geometry.location.lat()),
-          longitude: String(place.geometry.location.lng()),
-          placeId: place.place_id ?? "",
+        if (!apiKey) {
+          console.error("NEXT_PUBLIC_LOCATIONIQ_API_KEY is not configured");
+
+          setSuggestions([]);
+          setOpen(false);
+
+          return;
+        }
+
+        const params = new URLSearchParams({
+          key: apiKey,
+          q: query,
+          format: "json",
+          addressdetails: "1",
+          limit: "5",
+          countrycodes: "in",
         });
-      });
-    });
 
-    return () => listener?.remove();
+        const response = await fetch(
+          `https://us1.locationiq.com/v1/autocomplete?${params.toString()}`,
+          {
+            signal: controller.signal,
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error(`LocationIQ request failed: ${response.status}`);
+        }
+
+        const data: LocationIQResult[] = await response.json();
+
+        setSuggestions(data);
+        setOpen(data.length > 0);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
+        console.error("LocationIQ autocomplete error:", error);
+
+        setSuggestions([]);
+        setOpen(false);
+      } finally {
+        setLoading(false);
+      }
+    }, 400);
+
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [value]);
+
+  /*
+   * Close dropdown when clicking outside
+   */
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
   }, []);
 
+  /*
+   * Select suggestion
+   */
+  function handleSelect(place: LocationIQResult) {
+    const address = place.display_name;
+
+    const city =
+      place.address?.city ??
+      place.address?.town ??
+      place.address?.village ??
+      place.address?.county ??
+      "";
+
+    const result: PlaceResult = {
+      address,
+      city,
+      latitude: place.lat,
+      longitude: place.lon,
+      placeId: place.place_id,
+    };
+
+    // Update parent's text value
+    onChange(address);
+
+    // Update parent's selected place
+    onSelect(result);
+
+    setSuggestions([]);
+    setOpen(false);
+  }
+
   return (
-    <input
-      ref={inputRef}
-      placeholder="Search address"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      autoComplete="off"
-    />
+    <div ref={containerRef} className="relative">
+      <input
+        type="text"
+        placeholder="Search address"
+        value={value}
+        autoComplete="off"
+        onChange={(e) => {
+          const newValue = e.target.value;
+
+          console.log("Autocomplete input changed:", newValue);
+
+          onChange(newValue);
+
+          setOpen(true);
+        }}
+        onFocus={() => {
+          if (suggestions.length > 0) {
+            setOpen(true);
+          }
+        }}
+        className="w-full rounded-md border px-3 py-2"
+      />
+
+      {open && (
+        <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-md border bg-white shadow-lg">
+          {loading && (
+            <div className="px-3 py-2 text-sm text-gray-500">Searching...</div>
+          )}
+
+          {!loading && suggestions.length === 0 && value.trim().length >= 3 && (
+            <div className="px-3 py-2 text-sm text-gray-500">
+              No locations found
+            </div>
+          )}
+
+          {!loading &&
+            suggestions.map((place) => (
+              <button
+                key={place.place_id}
+                type="button"
+                className="block w-full px-3 py-3 text-left text-sm hover:bg-gray-100"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                }}
+                onClick={() => {
+                  handleSelect(place);
+                }}
+              >
+                {place.display_name}
+              </button>
+            ))}
+        </div>
+      )}
+    </div>
   );
 }

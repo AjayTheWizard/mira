@@ -98,11 +98,11 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
         </div>
 
         <p className="eyebrow">
-          {mode === "sign-up" ? "JOIN MIRA" : "WELCOME BACK"}
+          {mode === "sign-up" ? "JOIN AuraSync" : "WELCOME BACK"}
         </p>
 
         <h1>
-          {mode === "sign-up" ? "Create your account" : "Sign in to mira"}
+          {mode === "sign-up" ? "Create your account" : "Sign in to AuraSync"}
         </h1>
 
         <p className="muted">
@@ -189,7 +189,7 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
         </form>
 
         <p className="auth-switch">
-          {mode === "sign-up" ? "Already have an account?" : "New to mira?"}{" "}
+          {mode === "sign-up" ? "Already have an account?" : "New to AuraSync?"}{" "}
           <Link href={mode === "sign-up" ? "/sign-in" : "/sign-up"}>
             {mode === "sign-up" ? "Sign in" : "Create one"}
           </Link>

@@ -1,10 +1,19 @@
 "use client";
 
-import type { Payment, PaymentStatus } from "@/lib/db/types";
+import type {
+  AppointmentViewModel,
+  Payment,
+  PaymentStatus,
+} from "@/lib/db/types";
+
+const PAYMENT_METHODS = ["Pay at salon", "Cash", "Card", "UPI", "Bank transfer"];
 
 type PaymentViewProps = {
   payments: Payment[];
   changePayment: (id: string, status: PaymentStatus) => Promise<void>;
+  changeMethod: (id: string, method: string) => Promise<void>;
+  appointments: AppointmentViewModel[];
+  setShowAppointment: (appointment: AppointmentViewModel | null) => void;
 };
 
 const PAYMENT_STATUSES: PaymentStatus[] = [
@@ -15,7 +24,13 @@ const PAYMENT_STATUSES: PaymentStatus[] = [
   "cancelled",
 ];
 
-export function PaymentView({ payments, changePayment }: PaymentViewProps) {
+export function PaymentView({
+  payments,
+  changePayment,
+  changeMethod,
+  appointments,
+  setShowAppointment,
+}: PaymentViewProps) {
   const collectedThisMonth = payments
     .filter((payment) => payment.status === "paid")
     .reduce((total, payment) => total + payment.amount, 0);
@@ -36,10 +51,11 @@ export function PaymentView({ payments, changePayment }: PaymentViewProps) {
         <div>
           <p className="eyebrow">PAYMENTS</p>
 
-          <h2>Manual payment management</h2>
+          <h2>Payment tracking</h2>
 
           <p className="muted">
-            Update payment status after collecting at the salon.
+            Every booking creates a payment automatically — update status
+            once you've collected it at the salon.
           </p>
         </div>
 
@@ -62,41 +78,74 @@ export function PaymentView({ payments, changePayment }: PaymentViewProps) {
           </div>
 
           {payments.length === 0 ? (
-            <div className="empty-state">No payments found.</div>
+            <div className="empty-state">
+              No payments yet — they're created automatically as customers
+              book.
+            </div>
           ) : (
-            payments.map((payment) => (
-              <div className="table-row" key={payment.id}>
-                <strong>{payment.customerName}</strong>
+            payments.map((payment) => {
+              const linkedAppointment = payment.appointmentId
+                ? appointments.find((a) => a.id === payment.appointmentId)
+                : undefined;
 
-                <span>
-                  {payment.serviceName}
+              return (
+                <div className="table-row" key={payment.id}>
+                  <strong>{payment.customerName}</strong>
 
-                  <small>{formatDate(payment.createdAt)}</small>
-                </span>
+                  {linkedAppointment ? (
+                    <button
+                      type="button"
+                      className="text-button"
+                      style={{ textAlign: "left" }}
+                      onClick={() => setShowAppointment(linkedAppointment)}
+                    >
+                      <span>
+                        {payment.serviceName}
+                        <small>{formatDate(payment.createdAt)}</small>
+                      </span>
+                    </button>
+                  ) : (
+                    <span>
+                      {payment.serviceName}
+                      <small>{formatDate(payment.createdAt)}</small>
+                    </span>
+                  )}
 
-                <span>{formatCurrency(payment.amount)}</span>
+                  <span>{formatCurrency(payment.amount)}</span>
 
-                <span>{payment.method || "Pay at salon"}</span>
+                  <select
+                    value={payment.method ?? "Pay at salon"}
+                    onChange={(event) =>
+                      changeMethod(payment.id, event.target.value)
+                    }
+                  >
+                    {PAYMENT_METHODS.map((method) => (
+                      <option key={method} value={method}>
+                        {method}
+                      </option>
+                    ))}
+                  </select>
 
-                <span className="status-badge">{payment.status}</span>
+                  <span className="status-badge">{payment.status}</span>
 
-                <select
-                  value={payment.status}
-                  onChange={(event) =>
-                    changePayment(
-                      payment.id,
-                      event.target.value as PaymentStatus,
-                    )
-                  }
-                >
-                  {PAYMENT_STATUSES.map((status) => (
-                    <option key={status} value={status}>
-                      {status.charAt(0).toUpperCase() + status.slice(1)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ))
+                  <select
+                    value={payment.status}
+                    onChange={(event) =>
+                      changePayment(
+                        payment.id,
+                        event.target.value as PaymentStatus,
+                      )
+                    }
+                  >
+                    {PAYMENT_STATUSES.map((status) => (
+                      <option key={status} value={status}>
+                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })
           )}
         </div>
       </section>

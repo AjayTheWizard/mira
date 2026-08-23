@@ -186,7 +186,7 @@ export default function ManagerWorkspace({
     <div className="manager-portal">
       <aside className={`manager-sidebar ${mobileNav ? "mobile-open" : ""}`}>
         <div className="brand">
-          <div className="brand-mark">m</div>
+          <div className="brand-mark">a</div>
           <span>
             AuraSync<span className="brand-dot">.</span>
           </span>

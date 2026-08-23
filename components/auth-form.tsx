@@ -89,11 +89,11 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
       <section className="auth-card">
         <div className="brand">
           <div className="brand-mark" aria-hidden="true">
-            m
+            a
           </div>
 
           <span>
-            mira<span className="brand-dot">.</span>
+            AuraSync<span className="brand-dot">.</span>
           </span>
         </div>
 

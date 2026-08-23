@@ -155,7 +155,7 @@ export default function HomeClient({
     <div className="portal-shell">
       <aside className={`portal-sidebar ${menu ? "mobile-open" : ""}`}>
         <div className="brand">
-          <div className="brand-mark">m</div>
+          <div className="brand-mark">a</div>
           <span>
             AuraSync<span className="brand-dot">.</span>
           </span>

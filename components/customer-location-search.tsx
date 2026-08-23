@@ -62,7 +62,7 @@ export function CustomerLocationSearch({ value, onChange }: Props) {
           format: "json",
           addressdetails: "1",
           limit: "5",
-          countrycodes: "in",
+          countrycodes: "np",
         });
         const res = await fetch(
           `https://us1.locationiq.com/v1/autocomplete?${params.toString()}`,

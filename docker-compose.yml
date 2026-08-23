@@ -3,32 +3,38 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: mira-app
-    restart: unless-stopped
+      args:
+        DATABASE_URL: postgresql://postgres:root@db:5432/mira
+        BETTER_AUTH_URL: ${BETTER_AUTH_URL}
+        BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+        NEXT_PUBLIC_LOCATIONIQ_API_KEY: ${NEXT_PUBLIC_LOCATIONIQ_API_KEY}
     ports:
       - "3000:3000"
     environment:
-      NODE_ENV: production
-      DATABASE_URL: postgresql://postgres:root@postgres:5432/mira
-      BETTER_AUTH_URL: http://localhost:3000
-      BETTER_AUTH_SECRET: VtWuWXPzNPFbu+3yo76KbuHhrKTw0HAYkRITjfJubtE=
-      NEXT_PUBLIC_LOCATIONIQ_API_KEY: pk.d00e370060722630cc5d811fd4ed4fbd
+      - DATABASE_URL=postgresql://postgres:root@db:5432/mira
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL}
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - NEXT_PUBLIC_LOCATIONIQ_API_KEY=${NEXT_PUBLIC_LOCATIONIQ_API_KEY}
     depends_on:
-      postgres:
+      db:
         condition: service_healthy
 
-  postgres:
+  db:
     image: postgres:16-alpine
-    container_name: mira-postgres
-    restart: unless-stopped
+    restart: always
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: root
       POSTGRES_DB: mira
     ports:
       - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+volumes:
+  pgdata:

@@ -2,6 +2,8 @@
 // Kept in a separate file from lib/db/types.ts so nothing there is touched —
 // import from both files as needed.
 
+export type { NotificationItem } from "./notification-types";
+
 export type ServiceOption = {
   id: string;
   name: string;

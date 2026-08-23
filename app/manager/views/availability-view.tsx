@@ -7,6 +7,8 @@ import {
   type DayAvailability,
 } from "@/app/actions/availability";
 import { useEffect, useState } from "react";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type StaffRow = { id: string; name: string; role: string | null; isActive: boolean };
 
@@ -62,8 +64,8 @@ export function AvailabilityView() {
           <p className="eyebrow">AVAILABILITY</p>
           <h1>Set working hours</h1>
           <p className="muted">
-            Customers can only book slots inside these hours. Turn a day off if a
-            staff member doesn't work it.
+            Customers can only book slots inside these hours. Turn a day off if
+            a staff member doesn't work it.
           </p>
         </div>
       </div>
@@ -71,38 +73,75 @@ export function AvailabilityView() {
       {loading && <p className="muted">Loading staff...</p>}
 
       {!loading && staffList.length === 0 && (
-        <p className="muted">Add a staff member first, then set their hours here.</p>
+        <p className="muted">
+          Add a staff member first, then set their hours here.
+        </p>
       )}
 
       {!loading && staffList.length > 0 && (
         <section className="profile-panel">
-          <label>
+          <Label>
             Staff member
-            <select
-              value={selectedStaffId}
-              onChange={(e) => setSelectedStaffId(e.target.value)}
-            >
-              {staffList.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                  {s.role ? ` · ${s.role}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
+            <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select a staff member">
+                  {(() => {
+                    const staff = staffList.find(
+                      (s) => s.id === selectedStaffId,
+                    );
 
-          <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+                    return staff
+                      ? `${staff.name}${staff.role ? ` · ${staff.role}` : ""}`
+                      : "Select a staff member";
+                  })()}
+                </SelectValue>
+              </SelectTrigger>
+
+              <SelectContent>
+                {staffList.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                    {s.role ? ` · ${s.role}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Label>
+          <div
+            style={{
+              marginTop: 16,
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+            }}
+          >
             {week.map((day) => (
               <div
                 key={day.dayOfWeek}
                 className="schedule-row"
-                style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  flexWrap: "wrap",
+                }}
               >
-                <label style={{ display: "flex", alignItems: "center", gap: 8, width: 150 }}>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    width: 150,
+                  }}
+                >
                   <input
                     type="checkbox"
                     checked={day.isAvailable}
-                    onChange={(e) => updateDay(day.dayOfWeek, { isAvailable: e.target.checked })}
+                    onChange={(e) =>
+                      updateDay(day.dayOfWeek, {
+                        isAvailable: e.target.checked,
+                      })
+                    }
                   />
                   {DAY_LABELS[day.dayOfWeek]}
                 </label>
@@ -111,13 +150,17 @@ export function AvailabilityView() {
                     <input
                       type="time"
                       value={day.startTime}
-                      onChange={(e) => updateDay(day.dayOfWeek, { startTime: e.target.value })}
+                      onChange={(e) =>
+                        updateDay(day.dayOfWeek, { startTime: e.target.value })
+                      }
                     />
                     <span>to</span>
                     <input
                       type="time"
                       value={day.endTime}
-                      onChange={(e) => updateDay(day.dayOfWeek, { endTime: e.target.value })}
+                      onChange={(e) =>
+                        updateDay(day.dayOfWeek, { endTime: e.target.value })
+                      }
                     />
                   </>
                 )}
@@ -126,8 +169,16 @@ export function AvailabilityView() {
             ))}
           </div>
 
-          {error && <div className="success-note" style={{ marginTop: 12 }}>{error}</div>}
-          {saved && <div className="success-note" style={{ marginTop: 12 }}>Hours saved.</div>}
+          {error && (
+            <div className="success-note" style={{ marginTop: 12 }}>
+              {error}
+            </div>
+          )}
+          {saved && (
+            <div className="success-note" style={{ marginTop: 12 }}>
+              Hours saved.
+            </div>
+          )}
 
           <button
             className="btn btn-primary"

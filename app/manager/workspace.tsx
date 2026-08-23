@@ -1,9 +1,12 @@
 "use client";
 import {
+  markAllManagerNotificationsRead,
+  markManagerNotificationRead,
   updateAppointmentStatus,
   updatePaymentMethod,
   updatePaymentStatus,
 } from "@/app/actions/manager";
+import { NotificationPanel } from "@/components/notification-panel";
 import {
   Bell,
   CalendarDays,
@@ -36,6 +39,7 @@ import type {
   Staff,
   User,
 } from "@/lib/db/types";
+import type { NotificationItem } from "@/lib/db/notification-types";
 import { AppointmentDrawer } from "./appointment-drawer";
 import { Dashboard } from "./dashboard";
 import { AppointmentView } from "./views/appointment-view";
@@ -54,6 +58,7 @@ type Props = {
   stats?: ManagerStats;
   monthlyRevenue?: MonthlyRevenue[];
   user?: User;
+  initialNotifications?: NotificationItem[];
 };
 export default function ManagerWorkspace({
   initialSalon,
@@ -65,6 +70,7 @@ export default function ManagerWorkspace({
   stats,
   monthlyRevenue = [],
   user,
+  initialNotifications = [],
 }: Props) {
    const router = useRouter();
   const [payments, setPayments] = useState<Payment[]>(initialPayments);
@@ -75,6 +81,10 @@ export default function ManagerWorkspace({
   const [range, setRange] = useState<RevenueRange>("7d");
   const [search, setSearch] = useState("");
   const [appointmentStatus, setAppointmentStatus] = useState("All");
+  const [notifications, setNotifications] =
+    useState<NotificationItem[]>(initialNotifications);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
   // Local state only initializes from props once; router.refresh() (used
   // after creating/updating records) re-fetches server data and passes new
   // props, so re-sync local state when that happens.
@@ -96,8 +106,7 @@ export default function ManagerWorkspace({
   async function changePayment(id: string, status: string) {
     await updatePaymentStatus(id, status);
     setPayments(payments.map((p) => (p.id === id ? { ...p, status } : p)));
-  }
-  async function changePaymentMethod(id: string, method: string) {
+  }  async function changePaymentMethod(id: string, method: string) {
     await updatePaymentMethod(id, method);
     setPayments(payments.map((p) => (p.id === id ? { ...p, method } : p)));
   }
@@ -114,6 +123,19 @@ export default function ManagerWorkspace({
           }
         : prev,
     );
+  }
+  async function handleMarkNotificationRead(id: string) {
+    const target = notifications.find((n) => n.id === id);
+    if (!target || target.isRead) return;
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)),
+    );
+    await markManagerNotificationRead(id);
+  }
+  async function handleMarkAllNotificationsRead() {
+    if (unreadCount === 0) return;
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    await markAllManagerNotificationsRead();
   }
   const dynamicAppointments: AppointmentViewModel[] = appointments.map(
     (appointment) => ({
@@ -216,16 +238,36 @@ export default function ManagerWorkspace({
             </h1>
           </div>
           <div className="manager-header-actions">
-            <button
-              className="icon-button"
-              aria-label="Search"
-              onClick={() => setView("Appointments")}
-            >
+            <button className="icon-button" aria-label="Search" onClick={() => setView("Appointments")}>
               <Search size={17} />
             </button>
-            <button className="icon-button" aria-label="Notifications">
-              <Bell size={17} />
-            </button>
+            <div style={{ position: "relative" }}>
+              <button
+                className="icon-button"
+                aria-label="Notifications"
+                onClick={() => setNotifOpen((open) => !open)}
+                style={{ position: "relative" }}
+              >
+                <Bell size={17} />
+                {unreadCount > 0 && (
+                  <span
+                    style={{
+                      position: "absolute", top: -2, right: -2, width: 8, height: 8,
+                      borderRadius: "50%", background: "#e0435c",
+                    }}
+                  />
+                )}
+              </button>
+              {notifOpen && (
+                <NotificationPanel
+                  notifications={notifications}
+                  unreadCount={unreadCount}
+                  onClose={() => setNotifOpen(false)}
+                  onMarkRead={handleMarkNotificationRead}
+                  onMarkAllRead={handleMarkAllNotificationsRead}
+                />
+              )}
+            </div>
             <div className="avatar">{initials}</div>
           </div>
         </header>

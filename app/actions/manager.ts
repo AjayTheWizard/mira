@@ -17,6 +17,7 @@ import {
   and,
   count,
   countDistinct,
+  desc,
   eq,
   gte,
   isNotNull,
@@ -54,6 +55,31 @@ const STATUS_NOTIFICATION_COPY: Record<
   completed: (salonName, serviceName) => ({
     title: "Visit completed",
     body: `Thanks for visiting ${salonName}! We hope to see you again soon.`,
+  }),
+};
+
+// Copy sent to the customer as an in-app notification when the manager
+// changes their payment's status. "pending" has no entry — it's the
+// default state, not a notable change.
+const PAYMENT_NOTIFICATION_COPY: Record<
+  string,
+  (amount: number, serviceName: string) => { title: string; body: string }
+> = {
+  paid: (amount, serviceName) => ({
+    title: "Payment received",
+    body: `We've received your payment of रू${amount.toLocaleString("en-IN")} for ${serviceName}. Thanks!`,
+  }),
+  partial: (amount, serviceName) => ({
+    title: "Partial payment recorded",
+    body: `We've recorded a partial payment for your ${serviceName} appointment. A balance may still be due.`,
+  }),
+  refunded: (amount, serviceName) => ({
+    title: "Payment refunded",
+    body: `Your payment of रू${amount.toLocaleString("en-IN")} for ${serviceName} has been refunded.`,
+  }),
+  cancelled: () => ({
+    title: "Payment voided",
+    body: `A pending payment for your appointment was voided by the salon.`,
   }),
 };
 
@@ -263,6 +289,55 @@ export async function updateSalon(input: {
   });
 }
 
+export async function deleteBranch(id: string) {
+  const userId = await managerId();
+
+  await db.transaction(async (tx) => {
+    // Make sure the branch belongs to the logged-in manager
+    const [existingBranch] = await tx
+      .select({
+        id: branch.id,
+      })
+      .from(branch)
+      .where(and(eq(branch.id, id), eq(branch.userId, userId)))
+      .limit(1);
+
+    if (!existingBranch) {
+      throw new Error("Branch not found");
+    }
+
+    // Ratings may reference staff/branch
+    await tx
+      .delete(rating)
+      .where(and(eq(rating.branchId, id), eq(rating.userId, userId)));
+
+    // Payments may reference appointments/branch
+    await tx
+      .delete(payment)
+      .where(and(eq(payment.branchId, id), eq(payment.userId, userId)));
+
+    // Appointments reference the branch
+    await tx
+      .delete(appointment)
+      .where(and(eq(appointment.branchId, id), eq(appointment.userId, userId)));
+
+    // Staff assigned to this branch
+    await tx
+      .delete(staff)
+      .where(and(eq(staff.branchId, id), eq(staff.userId, userId)));
+
+    // Finally delete the branch itself
+    await tx
+      .delete(branch)
+      .where(and(eq(branch.id, id), eq(branch.userId, userId)));
+  });
+
+  revalidatePath("/manager");
+
+  return {
+    success: true,
+  };
+}
 export async function createBranch(input: {
   name: string;
   address: string;
@@ -306,6 +381,20 @@ export async function createBranch(input: {
 export async function updatePaymentStatus(id: string, status: string) {
   const userId = await managerId();
 
+  const [existing] = await db
+    .select({
+      appointmentId: payment.appointmentId,
+      amount: payment.amount,
+      serviceName: payment.serviceName,
+    })
+    .from(payment)
+    .where(and(eq(payment.id, id), eq(payment.userId, userId)))
+    .limit(1);
+
+  if (!existing) {
+    throw new Error("Payment not found");
+  }
+
   await db
     .update(payment)
     .set({
@@ -313,6 +402,49 @@ export async function updatePaymentStatus(id: string, status: string) {
       updatedAt: new Date(),
     })
     .where(and(eq(payment.id, id), eq(payment.userId, userId)));
+
+  if (!existing.appointmentId) {
+    return;
+  }
+
+  const [linkedAppointment] = await db
+    .select({
+      customerId: appointment.customerId,
+      salonName: appointment.salonName,
+    })
+    .from(appointment)
+    .where(eq(appointment.id, existing.appointmentId))
+    .limit(1);
+
+  if (!linkedAppointment) {
+    return;
+  }
+
+  const copy = PAYMENT_NOTIFICATION_COPY[status]?.(
+    existing.amount,
+    existing.serviceName,
+  );
+
+  if (copy) {
+    await db.insert(notification).values({
+      id: crypto.randomUUID(),
+      userId: linkedAppointment.customerId,
+      title: copy.title,
+      body: copy.body,
+    });
+  }
+
+  // Nudge the customer to rate their visit once payment is settled.
+  if (status === "paid") {
+    await db.insert(notification).values({
+      id: crypto.randomUUID(),
+      userId: linkedAppointment.customerId,
+      title: "How was your visit?",
+      body: `We'd love to hear about your experience at ${linkedAppointment.salonName}. Leave a rating from your appointments list.`,
+    });
+  }
+
+  revalidatePath("/");
 }
 
 export async function updateAppointmentStatus(id: string, status: string) {
@@ -775,4 +907,49 @@ export async function getBranchRatings() {
     average: Number(Number(r.average).toFixed(1)),
     count: r.count,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Notifications (bookings, cancellations by customers, etc. land here via
+// the customer-side actions — these just read/mutate them for the manager)
+// ---------------------------------------------------------------------------
+
+export async function getManagerNotifications() {
+  const userId = await managerId();
+  return db
+    .select({
+      id: notification.id,
+      title: notification.title,
+      body: notification.body,
+      isRead: notification.isRead,
+      createdAt: notification.createdAt,
+    })
+    .from(notification)
+    .where(eq(notification.userId, userId))
+    .orderBy(desc(notification.createdAt));
+}
+
+export async function getManagerUnreadNotificationCount() {
+  const userId = await managerId();
+  const rows = await db
+    .select({ id: notification.id })
+    .from(notification)
+    .where(and(eq(notification.userId, userId), eq(notification.isRead, false)));
+  return rows.length;
+}
+
+export async function markManagerNotificationRead(id: string) {
+  const userId = await managerId();
+  await db
+    .update(notification)
+    .set({ isRead: true })
+    .where(and(eq(notification.id, id), eq(notification.userId, userId)));
+}
+
+export async function markAllManagerNotificationsRead() {
+  const userId = await managerId();
+  await db
+    .update(notification)
+    .set({ isRead: true })
+    .where(eq(notification.userId, userId));
 }

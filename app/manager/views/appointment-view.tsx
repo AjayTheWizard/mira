@@ -10,6 +10,7 @@ import {
   getStaff,
 } from "@/app/actions/manager";
 import { getServices } from "@/app/actions/service";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type AppointmentViewProps = {
   appointments: AppointmentViewModel[];
@@ -46,26 +47,7 @@ export function AppointmentView({
   setStatus,
   setShowAppointment,
 }: AppointmentViewProps) {
-  const router = useRouter();
   const [salonFilter, setSalonFilter] = useState("All");
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(emptyForm);
-  const [branches, setBranches] = useState<BranchOption[]>([]);
-  const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
-  const [services, setServices] = useState<ServiceOption[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!showForm) return;
-    Promise.all([getBranches(), getStaff(), getServices()]).then(
-      ([branchRows, staffRows, serviceRows]) => {
-        setBranches(branchRows as BranchOption[]);
-        setStaffOptions(staffRows as StaffOption[]);
-        setServices(serviceRows as ServiceOption[]);
-      },
-    );
-  }, [showForm]);
 
   const salonOptions = useMemo(
     () => Array.from(new Set(appointments.map((a) => a.salon))).sort(),
@@ -78,30 +60,6 @@ export function AppointmentView({
       (salonFilter === "All" || a.salon === salonFilter),
   );
 
-  async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError("");
-
-    if (!form.serviceId) {
-      setError("Select a service");
-      return;
-    }
-
-    setSaving(true);
-    try {
-      await createManagerAppointment(form);
-      setForm(emptyForm);
-      setShowForm(false);
-      router.refresh();
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to create appointment",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <>
       <div className="manager-view-toolbar">
@@ -112,97 +70,7 @@ export function AppointmentView({
             Manage every booking across your salon branches.
           </p>
         </div>
-        <button
-          className="btn btn-primary"
-          onClick={() => setShowForm((v) => !v)}
-        >
-          <PlusIcon size={15} /> {showForm ? "Cancel" : "Create appointment"}
-        </button>
       </div>
-
-      {showForm && (
-        <form
-          className="branch-form profile-panel"
-          onSubmit={handleCreate}
-        >
-          <input
-            value={form.customerName}
-            onChange={(e) =>
-              setForm({ ...form, customerName: e.target.value })
-            }
-            placeholder="Customer name"
-            required
-          />
-
-          <select
-            value={form.branchId}
-            onChange={(e) => setForm({ ...form, branchId: e.target.value })}
-          >
-            <option value="">Any branch</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name} {b.city ? `· ${b.city}` : ""}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={form.serviceId}
-            onChange={(e) => setForm({ ...form, serviceId: e.target.value })}
-            required
-          >
-            <option value="" disabled>
-              Select service
-            </option>
-            {services.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} · {s.durationMinutes} min · रू{s.price}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={form.staffId}
-            onChange={(e) => setForm({ ...form, staffId: e.target.value })}
-          >
-            <option value="">Unassigned</option>
-            {staffOptions.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-
-          <input
-            type="date"
-            value={form.appointmentDate}
-            onChange={(e) =>
-              setForm({ ...form, appointmentDate: e.target.value })
-            }
-            required
-          />
-
-          <input
-            type="time"
-            value={form.appointmentTime}
-            onChange={(e) =>
-              setForm({ ...form, appointmentTime: e.target.value })
-            }
-            required
-          />
-
-          {error && <div className="error-banner">{error}</div>}
-
-          <button className="btn btn-secondary" disabled={saving}>
-            {saving ? (
-              <Loader2 size={14} className="spin" />
-            ) : (
-              <PlusIcon size={14} />
-            )}
-            Save appointment
-          </button>
-        </form>
-      )}
 
       <div className="manager-filters">
         <div className="filter-search">
@@ -213,25 +81,35 @@ export function AppointmentView({
             placeholder="Search customer, phone or ID..."
           />
         </div>
-        <select
-          value={salonFilter}
-          onChange={(e) => setSalonFilter(e.target.value)}
-        >
-          <option value="All">All salons</option>
-          {salonOptions.map((salon) => (
-            <option key={salon} value={salon}>
-              {salon}
-            </option>
-          ))}
-        </select>
-        <select value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option>All</option>
-          <option>Pending</option>
-          <option>Confirmed</option>
-          <option>Arrived</option>
-          <option>Completed</option>
-          <option>Cancelled</option>
-        </select>
+        <Select value={salonFilter} onValueChange={setSalonFilter}>
+          <SelectTrigger className="w-45">
+            <SelectValue placeholder="All salons" />
+          </SelectTrigger>
+
+          <SelectContent>
+            <SelectItem value="All">All salons</SelectItem>
+
+            {salonOptions.map((salon) => (
+              <SelectItem key={salon} value={salon}>
+                {salon}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={status} onValueChange={setStatus}>
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="All" />
+          </SelectTrigger>
+
+          <SelectContent>
+            <SelectItem value="All">All</SelectItem>
+            <SelectItem value="Pending">Pending</SelectItem>
+            <SelectItem value="Confirmed">Confirmed</SelectItem>
+            <SelectItem value="Upcoming">Upcoming</SelectItem>
+            <SelectItem value="Completed">Completed</SelectItem>
+            <SelectItem value="Cancelled">Cancelled</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       <section className="profile-panel">
         <div className="appointment-table full">

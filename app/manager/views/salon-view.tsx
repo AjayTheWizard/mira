@@ -7,12 +7,14 @@ import {
   getSalon,
   getBranches,
   getBranchRatings,
+  deleteBranch as deleteBranchAction
 } from "@/app/actions/manager";
-import { PlusIcon, StoreIcon, Loader2, Star } from "lucide-react";
+import { PlusIcon, StoreIcon, Loader2, Star, Trash2Icon } from "lucide-react";
 import {
   BranchAddressAutocomplete,
   PlaceResult,
 } from "@/components/branch-address-autocomplete";
+import { Button } from "@/components/ui/button";
 type SalonRow = {
   id: string;
   userId: string;
@@ -120,6 +122,14 @@ export function SalonView() {
       setError(err instanceof Error ? err.message : "Failed to save salon");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function deleteBranch(id: string) {
+    try {
+      await deleteBranchAction(id)
+    } catch(err){
+      setError(err instanceof Error ? err.message : "Failed to delete branch");
     }
   }
 
@@ -297,8 +307,9 @@ export function SalonView() {
                     <p className="muted">
                       {r ? (
                         <>
-                          <Star size={12} fill="currentColor" /> {r.average.toFixed(1)} ·{" "}
-                          {r.count} rating{r.count === 1 ? "" : "s"}
+                          <Star size={12} fill="currentColor" />{" "}
+                          {r.average.toFixed(1)} · {r.count} rating
+                          {r.count === 1 ? "" : "s"}
                         </>
                       ) : (
                         "No ratings yet"
@@ -306,9 +317,13 @@ export function SalonView() {
                     </p>
                   </div>
 
-                  <span className="status-badge">
-                    {b.isActive ? "Open" : "Closed"}
-                  </span>
+                  <Button
+                    onClick={() => deleteBranch(b.id)}
+                    variant="destructive"
+                    size="icon"
+                  >
+                    <Trash2Icon />
+                  </Button>
                 </div>
               );
             })

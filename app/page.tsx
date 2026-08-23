@@ -6,6 +6,7 @@ import {
   getExploreSalons,
   getFavoriteSalonIds,
   getMyAppointments,
+  getMyNotifications,
   getPreferences,
   getUnreadNotificationCount,
 } from "@/app/actions/customer";
@@ -24,13 +25,14 @@ export default async function Page() {
     redirect("/manager");
   }
 
-  const [salons, favoriteIds, appointments, preferences, unreadCount] =
+  const [salons, favoriteIds, appointments, preferences, unreadCount, notifications] =
     await Promise.all([
       getExploreSalons(),
       getFavoriteSalonIds(),
       getMyAppointments(),
       getPreferences(),
       getUnreadNotificationCount(),
+      getMyNotifications(),
     ]);
 
   return (
@@ -41,6 +43,7 @@ export default async function Page() {
       initialAppointments={appointments}
       initialPreferences={preferences}
       initialUnreadCount={unreadCount}
+      initialNotifications={notifications}
     />
   );
 }

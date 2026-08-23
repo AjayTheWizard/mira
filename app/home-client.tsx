@@ -5,6 +5,7 @@ import {
   cancelAppointment,
   getExploreSalons,
   markAllNotificationsRead,
+  markNotificationRead,
   submitRating,
   toggleFavorite,
   updatePreferences,
@@ -14,11 +15,13 @@ import {
   CustomerLocationSearch,
   type CustomerLocation,
 } from "@/components/customer-location-search";
+import { NotificationPanel } from "@/components/notification-panel";
 import type {
   ExploreSalon,
   MyAppointment,
   CustomerPreferences,
 } from "@/lib/db/customer-types";
+import type { NotificationItem } from "@/lib/db/notification-types";
 import { formatDistance } from "@/lib/geo";
 import {
   Bell,
@@ -33,7 +36,6 @@ import {
   Settings,
   Star,
   UserRound,
-  X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -63,6 +65,7 @@ type HomeClientProps = {
   initialAppointments: MyAppointment[];
   initialPreferences: CustomerPreferences;
   initialUnreadCount: number;
+  initialNotifications: NotificationItem[];
 };
 
 export default function HomeClient({
@@ -72,12 +75,12 @@ export default function HomeClient({
   initialAppointments,
   initialPreferences,
   initialUnreadCount,
+  initialNotifications,
 }: HomeClientProps) {
   const router = useRouter();
   const [tab, setTab] = useState("Home");
   const [query, setQuery] = useState("");
   const [menu, setMenu] = useState(false);
-  const [notice, setNotice] = useState("");
 
   const [salons, setSalons] = useState<ExploreSalon[]>(initialSalons);
   const [loadingSalons, setLoadingSalons] = useState(false);
@@ -85,6 +88,8 @@ export default function HomeClient({
   const [favoriteIds, setFavoriteIds] = useState<string[]>(initialFavoriteIds);
   const [bookingBranchId, setBookingBranchId] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
+  const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications);
+  const [notifOpen, setNotifOpen] = useState(false);
 
   const matches = useMemo(
     () =>
@@ -117,14 +122,25 @@ export default function HomeClient({
     await toggleFavorite(salonId);
   }
 
-  async function handleBellClick() {
-    if (unreadCount > 0) {
-      await markAllNotificationsRead();
-      setUnreadCount(0);
-      setNotice(`You had ${unreadCount} notification${unreadCount === 1 ? "" : "s"}`);
-    } else {
-      setNotice("You are all caught up");
-    }
+  function handleBellClick() {
+    setNotifOpen((open) => !open);
+  }
+
+  async function handleMarkRead(id: string) {
+    const target = notifications.find((n) => n.id === id);
+    if (!target || target.isRead) return;
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)),
+    );
+    setUnreadCount((count) => Math.max(0, count - 1));
+    await markNotificationRead(id);
+  }
+
+  async function handleMarkAllRead() {
+    if (unreadCount === 0) return;
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    setUnreadCount(0);
+    await markAllNotificationsRead();
   }
 
   if (user.role === "manager")
@@ -180,22 +196,33 @@ export default function HomeClient({
           </button>
           <CustomerLocationSearch value={location} onChange={setLocation} />
           <div className="top-actions">
-            <button
-              className="icon-button"
-              aria-label="Notifications"
-              onClick={handleBellClick}
-              style={{ position: "relative" }}
-            >
-              <Bell size={18} />
-              {unreadCount > 0 && (
-                <span
-                  style={{
-                    position: "absolute", top: -2, right: -2, width: 8, height: 8,
-                    borderRadius: "50%", background: "#e0435c",
-                  }}
+            <div style={{ position: "relative" }}>
+              <button
+                className="icon-button"
+                aria-label="Notifications"
+                onClick={handleBellClick}
+                style={{ position: "relative" }}
+              >
+                <Bell size={18} />
+                {unreadCount > 0 && (
+                  <span
+                    style={{
+                      position: "absolute", top: -2, right: -2, width: 8, height: 8,
+                      borderRadius: "50%", background: "#e0435c",
+                    }}
+                  />
+                )}
+              </button>
+              {notifOpen && (
+                <NotificationPanel
+                  notifications={notifications}
+                  unreadCount={unreadCount}
+                  onClose={() => setNotifOpen(false)}
+                  onMarkRead={handleMarkRead}
+                  onMarkAllRead={handleMarkAllRead}
                 />
               )}
-            </button>
+            </div>
             <button className="user-mini" onClick={() => nav("Settings")}>
               <div className="avatar">
                 {user.name.slice(0, 2).toUpperCase()}
@@ -208,14 +235,6 @@ export default function HomeClient({
           </div>
         </header>
         <div className="portal-content">
-          {notice && (
-            <div className="success-note">
-              {notice}
-              <button onClick={() => setNotice("")}>
-                <X size={14} />
-              </button>
-            </div>
-          )}
           {tab === "Home" && (
             <CustomerHome
               user={user}

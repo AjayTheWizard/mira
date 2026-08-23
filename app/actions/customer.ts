@@ -20,12 +20,13 @@ import type {
   CustomerPreferences,
   ExploreSalon,
   MyAppointment,
+  NotificationItem,
   SalonDetail,
   ServiceOption,
   StaffOption,
   TimeSlot,
 } from "@/lib/db/customer-types";
-import { and, asc, eq, gte, inArray, lt, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, ne } from "drizzle-orm";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 
@@ -431,7 +432,16 @@ export async function createAppointment(input: {
     status: "pending",
   });
 
+  // Let the manager know a new booking came in.
+  await db.insert(notification).values({
+    id: crypto.randomUUID(),
+    userId: input.ownerId,
+    title: "New appointment booked",
+    body: `${customer.name} booked ${svc[0].name} at ${salonRow[0].name} for ${appointmentDate.toLocaleDateString("en-IN", { day: "2-digit", month: "short" })} · ${appointmentDate.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}.`,
+  });
+
   revalidatePath("/");
+  revalidatePath("/manager");
   return { id };
 }
 
@@ -518,6 +528,21 @@ export async function submitRating(input: {
 
 export async function cancelAppointment(id: string) {
   const customer = await customerSession();
+
+  const [existing] = await db
+    .select({
+      userId: appointment.userId,
+      salonName: appointment.salonName,
+      serviceName: appointment.serviceName,
+    })
+    .from(appointment)
+    .where(and(eq(appointment.id, id), eq(appointment.customerId, customer.id)))
+    .limit(1);
+
+  if (!existing) {
+    throw new Error("Appointment not found");
+  }
+
   await db
     .update(appointment)
     .set({ status: "cancelled", updatedAt: new Date() })
@@ -536,7 +561,16 @@ export async function cancelAppointment(id: string) {
       ),
     );
 
+  // Let the manager know a customer cancelled.
+  await db.insert(notification).values({
+    id: crypto.randomUUID(),
+    userId: existing.userId,
+    title: "Appointment cancelled by customer",
+    body: `${customer.name} cancelled their ${existing.serviceName} appointment at ${existing.salonName}.`,
+  });
+
   revalidatePath("/");
+  revalidatePath("/manager");
 }
 
 // ---------------------------------------------------------------------------
@@ -587,6 +621,21 @@ export async function updatePreferences(input: Partial<CustomerPreferences>) {
   });
 }
 
+export async function getMyNotifications(): Promise<NotificationItem[]> {
+  const customer = await customerSession();
+  return db
+    .select({
+      id: notification.id,
+      title: notification.title,
+      body: notification.body,
+      isRead: notification.isRead,
+      createdAt: notification.createdAt,
+    })
+    .from(notification)
+    .where(eq(notification.userId, customer.id))
+    .orderBy(desc(notification.createdAt));
+}
+
 export async function getUnreadNotificationCount() {
   const customer = await customerSession();
   const rows = await db
@@ -594,6 +643,14 @@ export async function getUnreadNotificationCount() {
     .from(notification)
     .where(and(eq(notification.userId, customer.id), eq(notification.isRead, false)));
   return rows.length;
+}
+
+export async function markNotificationRead(id: string) {
+  const customer = await customerSession();
+  await db
+    .update(notification)
+    .set({ isRead: true })
+    .where(and(eq(notification.id, id), eq(notification.userId, customer.id)));
 }
 
 export async function markAllNotificationsRead() {

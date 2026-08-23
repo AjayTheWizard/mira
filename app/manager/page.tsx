@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
-import { getManagerDashboard } from "@/app/actions/manager";
+import { getManagerDashboard, getManagerNotifications } from "@/app/actions/manager";
 
 import ManagerWorkspace from "./workspace";
 
@@ -19,7 +19,10 @@ export default async function ManagerPage() {
     redirect("/");
   }
 
-  const data = await getManagerDashboard(session.user.id);
+  const [data, notifications] = await Promise.all([
+    getManagerDashboard(session.user.id),
+    getManagerNotifications(),
+  ]);
 
   return (
     <ManagerWorkspace
@@ -32,6 +35,7 @@ export default async function ManagerPage() {
       stats={data.stats}
       monthlyRevenue={data.monthlyRevenue}
       user={data.manager ?? undefined}
+      initialNotifications={notifications}
     />
   );
 }

@@ -85,7 +85,7 @@ export function BranchAddressAutocomplete({
           format: "json",
           addressdetails: "1",
           limit: "5",
-          countrycodes: "in",
+          countrycodes: "np",
         });
 
         const response = await fetch(
